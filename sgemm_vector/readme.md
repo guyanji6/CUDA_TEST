@@ -1,0 +1,1 @@
+nvcc sgemm.cu -lcublas -o v0
