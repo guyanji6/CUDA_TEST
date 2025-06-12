@@ -97,11 +97,11 @@ int main()
     // 定义线程块大小和网格大小
     int threadsPerBlock = 32;
     dim3 blockSize(threadsPerBlock, threadsPerBlock);
-    dim3 gridSize((N + threadsPerBlock - 1) / threadsPerBlock, (M + threadsPerBlock - 1) / threadsPerBlock);
+    dim3 gridSize((N + threadsPerBlock - 1) / threadsPerBlock/4, (M + threadsPerBlock - 1) / threadsPerBlock);
 
-    sgemm0<<<gridSize, blockSize>>>(d_A, d_B, d_C, M, N, K);
+    sgemm1<<<gridSize, blockSize>>>(d_A, d_B, d_C, M, N, K);
     cudaEventRecord(start);
-    sgemm0<<<gridSize, blockSize>>>(d_A, d_B, d_C, M, N, K);
+    sgemm1<<<gridSize, blockSize>>>(d_A, d_B, d_C, M, N, K);
     cudaEventRecord(stop);
     cudaDeviceSynchronize();
     float milliseconds = 0;
@@ -117,7 +117,7 @@ int main()
     // 比较 GPU 和 CPU 的结果
     bool isCorrect = compare(h_C, h_C_CPU, M, N);
     // WriteMatrix("cpu res.txt", h_C_CPU, M, N);
-    // WriteMatrix("kernel res.txt", h_C, M, N);
+    WriteMatrix("kernel res.txt", h_C, M, N);
     // 使用 cuBLAS 计算矩阵乘法
     cublasHandle_t handle;
     cublasCreate(&handle);
