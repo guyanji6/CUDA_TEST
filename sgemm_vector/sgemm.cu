@@ -4,7 +4,8 @@
 #include <vector>
 #include <fstream>
 #include "kernel.h"
-
+// Kernel execution time: 0.222208 ms
+// cublas execution time: 0.03072 ms
 void sgemmCPU(const float *A, const float *B, float *C, int M, int N, int K)
 {
     for (int i = 0; i < M; ++i)

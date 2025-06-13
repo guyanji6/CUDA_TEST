@@ -5,8 +5,8 @@
 #include <fstream>
 #include "kernel.h"
 
-// Kernel execution time: 0.089088 ms
-// cublas execution time: 0.047104 ms
+// Kernel execution time: 0.178176 ms
+// cublas execution time: 0.048128 ms
 void sgemmCPU(const float *A, const float *B, float *C, int M, int N, int K)
 {
     for (int i = 0; i < M; ++i)
@@ -58,10 +58,22 @@ void WriteMatrix(std::string name, std::vector<float> h_C, int M, int N)
 int main()
 {
     cudaSetDevice(0);
+    // int deviceCount;
+    // cudaGetDeviceCount(&deviceCount);
+    // for (int i = 0; i < deviceCount; i++) {
+    //     cudaDeviceProp props;
+    //     cudaGetDeviceProperties(&props, i);
+
+    //     printf("Device %d: %s\n", i, props.name);
+    //     printf("  Total shared memory per block: %zu bytes\n", props.sharedMemPerBlock);
+    //     printf("  Total shared memory per multiprocessor: %zu bytes\n", props.sharedMemPerMultiprocessor);
+    //     printf("  Warp size: %d threads\n", props.warpSize);
+    //     printf("  Max threads per block: %d\n", props.maxThreadsPerBlock);
+    // }
     // 矩阵维度
-    int M = 2048; // A 的行数
-    int N = 1024; // B 的列数
-    int K = 256;  // A 的列数和 B 的行数
+    constexpr int M = 2048; // A 的行数
+    constexpr int N = 1024; // B 的列数
+    constexpr int K = 256;  // A 的列数和 B 的行数
 
     // 分配主机内存
     std::vector<float> h_A(M * K);
@@ -84,6 +96,10 @@ int main()
     {
         h_B[i] = static_cast<float>(i % 10);
     }
+    for (int i = 0; i < M * N; ++i)
+    {
+        h_C[i] = 0.0f;
+    }
 
     // 分配设备内存
     float *d_A, *d_B, *d_C, *d_C_cublas;
@@ -99,11 +115,11 @@ int main()
     // 定义线程块大小和网格大小
     int threadsPerBlock = 32;
     dim3 blockSize(threadsPerBlock, threadsPerBlock);
-    dim3 gridSize((N + threadsPerBlock - 1) / threadsPerBlock/4, (M + threadsPerBlock - 1) / threadsPerBlock);
+    dim3 gridSize((N + threadsPerBlock - 1) / threadsPerBlock / 4, (M + threadsPerBlock - 1) / threadsPerBlock / 4);
 
-    sgemm1<<<gridSize, blockSize>>>(d_A, d_B, d_C, M, N, K);
+    sgemm2<M, N, K><<<gridSize, blockSize>>>(d_A, d_B, d_C);
     cudaEventRecord(start);
-    sgemm1<<<gridSize, blockSize>>>(d_A, d_B, d_C, M, N, K);
+    sgemm2<M, N, K><<<gridSize, blockSize>>>(d_A, d_B, d_C);
     cudaEventRecord(stop);
     cudaDeviceSynchronize();
     float milliseconds = 0;
