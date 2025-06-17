@@ -79,13 +79,12 @@ __global__ void sgemm2(float *A, float *B, float *C)
         C[row * N + col] = sum;
 }
 
-/* shared  tile */
+/* shared , each thread compute a tile */
 template <int M, int N, int K>
 __global__ void sgemm3(float *A, float *B, float *C)
 {
-    __shared__ float smemA[BLOCK_SIZE][BLOCK_SIZE + 1];
-    __shared__ float smemB[BLOCK_SIZE][BLOCK_SIZE + 1];
-    int BK = BLOCK_SIZE;
+    __shared__ float smemA[BLOCK_SIZE * TILE_SIZE][BLOCK_SIZE];
+    __shared__ float smemB[BLOCK_SIZE][BLOCK_SIZE * TILE_SIZE];
     int tx = threadIdx.x;
     int ty = threadIdx.y;
     int bx = blockIdx.x;
@@ -96,27 +95,79 @@ __global__ void sgemm3(float *A, float *B, float *C)
 
     for (int k_offset = 0; k_offset < K; k_offset += BLOCK_SIZE)
     {
-        #pragma unroll
-        for (int i = 0; i < TILE_SIZE; i++) {
+#pragma unroll
+        for (int i = 0; i < TILE_SIZE; i++)
+        {
             int load_row = row + i;
             int load_col = k_offset + tx;
-            if (load_row < M && load_col < K) {
+            if (load_row < M && load_col < K)
+            {
+                // 索引：行=ty*TILE_SIZE+i, 列=tx
                 smemA[ty * TILE_SIZE + i][tx] = A[load_row * K + load_col];
-            } else {
+            }
+            else
+            {
                 smemA[ty * TILE_SIZE + i][tx] = 0.0f;
             }
         }
-        if ((out_k + ty) < K && col < N)
-            smemB[ty][tx] = B[(out_k + ty) * N + col];
-        else
-            smemB[ty][tx] = 0.0f;
-        __syncthreads();
-        for (size_t in_k = 0; in_k < BK; in_k += 1)
+#pragma unroll
+        for (int j = 0; j < TILE_SIZE; j++)
         {
-            sum += smemA[ty][in_k] * smemB[in_k][tx];
+            int load_row = k_offset + ty; // K维度偏移
+            int load_col = col + j;
+            if (load_row < K && load_col < N)
+            {
+                // 行=ty, 列=tx*TILE_SIZE+j, 列方向*TILE_SIZE
+                smemB[ty][tx * TILE_SIZE + j] = B[load_row * N + load_col];
+            }
+            else
+            {
+                smemB[ty][tx * TILE_SIZE + j] = 0.0f;
+            }
+        }
+        __syncthreads();
+        for (int k = 0; k < BLOCK_SIZE; k++)
+        {
+            // 预取A的TILE_SIZE个元素到寄存器
+            float a_reg[TILE_SIZE];
+#pragma unroll
+            for (int i = 0; i < TILE_SIZE; i++)
+            {
+
+                a_reg[i] = smemA[ty * TILE_SIZE + i][k];
+            }
+
+            // 预取B的TILE_SIZE个元素到寄存器
+            float b_reg[TILE_SIZE];
+#pragma unroll
+            for (int j = 0; j < TILE_SIZE; j++)
+            {
+                b_reg[j] = smemB[k][tx * TILE_SIZE + j];
+            }
+
+// 寄存器级矩阵乘法
+#pragma unroll
+            for (int i = 0; i < TILE_SIZE; i++)
+            {
+#pragma unroll
+                for (int j = 0; j < TILE_SIZE; j++)
+                {
+                    sum[i][j] += a_reg[i] * b_reg[j];
+                }
+            }
         }
         __syncthreads();
     }
-    if (row < M && col < N)
-        C[row * N + col] = sum;
+#pragma unroll
+    for (int i = 0; i < TILE_SIZE; i++)
+    {
+#pragma unroll
+        for (int j = 0; j < TILE_SIZE; j++)
+        {
+            if ((row + i) < M && (col + j) < N)
+            {
+                C[(row + i) * N + col + j] = sum[i][j];
+            }
+        }
+    }
 }

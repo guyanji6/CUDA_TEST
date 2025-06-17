@@ -5,8 +5,9 @@
 #include <fstream>
 #include "kernel.h"
 
-// Kernel execution time: 0.178176 ms
-// cublas execution time: 0.048128 ms
+// Kernel execution time: 0.053248 ms
+// cublas execution time: 0.034816 ms
+// 64%
 void sgemmCPU(const float *A, const float *B, float *C, int M, int N, int K)
 {
     for (int i = 0; i < M; ++i)
@@ -115,11 +116,11 @@ int main()
     // 定义线程块大小和网格大小
     int threadsPerBlock = 32;
     dim3 blockSize(threadsPerBlock, threadsPerBlock);
-    dim3 gridSize((N + threadsPerBlock - 1) / threadsPerBlock / 4, (M + threadsPerBlock - 1) / threadsPerBlock / 4);
+    dim3 gridSize((N + threadsPerBlock - 1) / threadsPerBlock/4, (M + threadsPerBlock - 1) / threadsPerBlock/4);
 
-    sgemm2<M, N, K><<<gridSize, blockSize>>>(d_A, d_B, d_C);
+    sgemm3<M, N, K><<<gridSize, blockSize>>>(d_A, d_B, d_C);
     cudaEventRecord(start);
-    sgemm2<M, N, K><<<gridSize, blockSize>>>(d_A, d_B, d_C);
+    sgemm3<M, N, K><<<gridSize, blockSize>>>(d_A, d_B, d_C);
     cudaEventRecord(stop);
     cudaDeviceSynchronize();
     float milliseconds = 0;
