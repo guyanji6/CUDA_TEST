@@ -171,3 +171,88 @@ __global__ void sgemm3(float *A, float *B, float *C)
         }
     }
 }
+
+/* shared , each thread compute a tile, FLOAT4 (B)*/
+template <int M, int N, int K>
+__global__ void sgemm4(float *A, float *B, float *C)
+{
+    __shared__ float smemA[BLOCK_SIZE][BLOCK_SIZE * TILE_SIZE];
+    __shared__ float4 smemB_vec[BLOCK_SIZE][BLOCK_SIZE];
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+    int row = by * BLOCK_SIZE * TILE_SIZE + ty * TILE_SIZE;
+    int col = bx * BLOCK_SIZE * TILE_SIZE + tx * TILE_SIZE;
+    float sum[TILE_SIZE][TILE_SIZE] = {{0.0f}};
+
+    for (int k_offset = 0; k_offset < K; k_offset += BLOCK_SIZE)
+    {
+        // load tranpose a from HBM to smem
+        for (int i = 0; i < TILE_SIZE; i++)
+        {
+            int load_row = row + i;
+            int load_col = k_offset + tx;
+            smemA[tx][ty * TILE_SIZE + i] = A[(load_row)*K + load_col];
+        }
+
+        // float4 load B from HBM to smem
+#pragma unroll
+        for (int j = 0; j < TILE_SIZE; j += 4)
+        {
+            int load_row = k_offset + ty;
+            int load_col = col + j;
+
+            // 向量化加载
+            float4 b_val4 = reinterpret_cast<float4 *>(B + load_row * N + load_col)[0];
+
+            smemB_vec[ty][tx + j + 0] = b_val4;
+        }
+
+        __syncthreads();
+
+        for (int k = 0; k < BLOCK_SIZE; k++)
+        {
+            // 预取A的TILE_SIZE个元素到寄存器
+            float a_reg[TILE_SIZE];
+#pragma unroll
+            for (int i = 0; i < TILE_SIZE; i++)
+            {
+
+                a_reg[i] = smemA[k][ty * TILE_SIZE + i];
+            }
+
+            // 预取B的TILE_SIZE个元素到寄存器
+            float b_reg[TILE_SIZE];
+            float4 b_ = smemB_vec[k][tx];
+            b_reg[0] = b_.x;
+            b_reg[1] = b_.y;
+            b_reg[2] = b_.z;
+            b_reg[3] = b_.w;
+
+// 寄存器级矩阵乘法
+#pragma unroll
+            for (int i = 0; i < TILE_SIZE; i++)
+            {
+#pragma unroll
+                for (int j = 0; j < TILE_SIZE; j++)
+                {
+                    sum[i][j] += a_reg[i] * b_reg[j];
+                }
+            }
+        }
+        __syncthreads();
+    }
+#pragma unroll
+    for (int i = 0; i < TILE_SIZE; i++)
+    {
+#pragma unroll
+        for (int j = 0; j < TILE_SIZE; j++)
+        {
+            if ((row + i) < M && (col + j) < N)
+            {
+                C[(row + i) * N + col + j] = sum[i][j];
+            }
+        }
+    }
+}
